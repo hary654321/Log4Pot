@@ -54,7 +54,7 @@ class Logger:
 
     def log_request(self, server_port, client, port, request, headers, uuid):
         self.log("request", "A request was received", correlation_id=str(uuid), dest_port=server_port, src_ip=client,
-                 src_port=port, request=request, extend=dict(headers))
+                 src_port=port, request=request, extend=dict(headers),dest_ip=headers.get('Host'))
 
     def log_exploit(self, location, payload, deobfuscated_payload, uuid):
         self.log(
