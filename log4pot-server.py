@@ -16,6 +16,7 @@ from typing import Any, Callable, List, Optional
 from uuid import uuid4
 from log4pot.expression_parser import parse as deobfuscate_old
 from log4pot.deobfuscator import deobfuscate as deobfuscate
+from time import time
 
 re_exploit = re.compile("\${.*}")
 
@@ -29,9 +30,14 @@ class Logger:
         self.f = open(self.log_file, "a")
 
     def log(self, logtype: str, message: str, **kwargs):
+        unix_time = time()
         d = {
             "type": logtype,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": int(unix_time * 1000),
+            "protocol":"http",
+            "app":"log4pot",
+            "name":"log4pot",
+            "UUID":"<UUID>",
             **kwargs,
         }
         j = json.dumps(d) + "\n"
@@ -47,8 +53,8 @@ class Logger:
         self.log("start", "Log4Pot started")
 
     def log_request(self, server_port, client, port, request, headers, uuid):
-        self.log("request", "A request was received", correlation_id=str(uuid), server_port=server_port, client=client,
-                 port=port, request=request, headers=dict(headers))
+        self.log("request", "A request was received", correlation_id=str(uuid), dest_port=server_port, src_ip=client,
+                 src_port=port, request=request, extend=dict(headers))
 
     def log_exploit(self, location, payload, deobfuscated_payload, uuid):
         self.log(
