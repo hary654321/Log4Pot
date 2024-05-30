@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"sync"
@@ -145,13 +146,17 @@ func deobfuscate(payload string) string {
 
 func main() {
 	var (
-		port         = flag.String("port", "8080", "Listening port")
+		port         = flag.String("port", "8081", "Listening port")
 		logFile      = flag.String("log", "log4pot.log", "Log file")
 		responseFile = flag.String("response", "responses/tomcat-default.html", "File used as response")
 		contentType  = flag.String("content-type", "text/html;charset=utf-8", "Content type of response")
 		serverHeader = flag.String("server-header", "", "Replace the default server header")
 	)
 	flag.Parse()
+
+	dir := filepath.Dir(*logFile)
+
+	os.MkdirAll(dir, os.ModePerm)
 
 	logger := &Logger{logFile: *logFile}
 
