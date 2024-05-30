@@ -23,22 +23,21 @@ type Logger struct {
 }
 
 type LogEntry struct {
-	Type                string      `json:"type"`
-	Timestamp           int64       `json:"timestamp"`
-	Protocol            string      `json:"protocol"`
-	App                 string      `json:"app"`
-	Name                string      `json:"name"`
-	UUID                string      `json:"UUID"`
-	CorrelationID       string      `json:"correlation_id,omitempty"`
-	DestPort            int         `json:"dest_port,omitempty"`
-	SrcIP               string      `json:"src_ip,omitempty"`
-	SrcPort             int         `json:"src_port,omitempty"`
-	Request             string      `json:"request,omitempty"`
-	DestIP              string      `json:"dest_ip,omitempty"`
-	Payload             string      `json:"payload,omitempty"`
-	DeobfuscatedPayload string      `json:"deobfuscated_payload,omitempty"`
-	Exception           string      `json:"exception,omitempty"`
-	Extend              interface{} `json:"extend,omitempty"`
+	Type                string         `json:"type"`
+	Timestamp           int64          `json:"timestamp"`
+	Protocol            string         `json:"protocol"`
+	App                 string         `json:"app"`
+	Name                string         `json:"name"`
+	UUID                string         `json:"UUID"`
+	DestPort            int            `json:"dest_port,omitempty"`
+	SrcIP               string         `json:"src_ip,omitempty"`
+	SrcPort             int            `json:"src_port,omitempty"`
+	Request             string         `json:"request,omitempty"`
+	DestIP              string         `json:"dest_ip,omitempty"`
+	Payload             string         `json:"payload,omitempty"`
+	DeobfuscatedPayload string         `json:"deobfuscated_payload,omitempty"`
+	Exception           string         `json:"exception,omitempty"`
+	Extend              map[string]any `json:"extend,omitempty"`
 }
 
 func (l *Logger) log(entry LogEntry) {
@@ -67,50 +66,33 @@ func (l *Logger) log(entry LogEntry) {
 	}
 }
 
-func (l *Logger) logStart() {
-	l.log(LogEntry{Type: "start"})
-}
-
-func (l *Logger) logRequest(LocalAddr string, ipAddress string, request string, headers http.Header, uuid string) {
+func (l *Logger) logRequest(LocalAddr string, ipAddress string, request string, headers http.Header) *LogEntry {
 	clientIP, clientPort, _ := net.SplitHostPort(ipAddress)
 	portInt, _ := strconv.Atoi(clientPort)
 
 	DestIP, DestPort, _ := net.SplitHostPort(LocalAddr)
 	DestPortInt, _ := strconv.Atoi(DestPort)
 
-	l.log(LogEntry{
-		Type:          "request",
-		CorrelationID: uuid,
-		DestIP:        DestIP,
-		DestPort:      DestPortInt,
-		SrcIP:         clientIP,
-		SrcPort:       portInt,
-		Request:       request,
-		Extend:        headers,
-		UUID:          "<UUID>",
-	})
+	extend := make(map[string]any)
+	extend["header"] = headers
+	return &LogEntry{
+		Type:     "request",
+		DestIP:   DestIP,
+		DestPort: DestPortInt,
+		SrcIP:    clientIP,
+		SrcPort:  portInt,
+		Request:  request,
+		Extend:   extend,
+		UUID:     "<UUID>",
+	}
 }
 
-func (l *Logger) logExploit(location, payload, deobfuscatedPayload, uuid string) {
-	l.log(LogEntry{
-		Type:          "exploit",
-		CorrelationID: uuid,
-		// Location:            location,
-		Payload:             payload,
-		DeobfuscatedPayload: deobfuscatedPayload,
-	})
-}
+func (l *Logger) logExploit(location, payload, deobfuscatedPayload string, log *LogEntry) {
 
-func (l *Logger) logException(e error, uuid string) {
-	l.log(LogEntry{
-		Type:          "exception",
-		Exception:     e.Error(),
-		CorrelationID: uuid,
-	})
-}
+	log.Type = "exploit"
+	log.Extend["paylod"] = payload
+	log.Extend["deobfuscatedPayload"] = deobfuscatedPayload
 
-func (l *Logger) logEnd() {
-	l.log(LogEntry{Type: "end"})
 }
 
 type Server struct {
@@ -130,9 +112,8 @@ func newServer(logger *Logger, serverHeader string, response []byte, contentType
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	uuid := fmt.Sprintf("%d", time.Now().UnixNano())
 
-	s.logger.logRequest(r.Host, r.RemoteAddr, r.Method, r.Header, uuid)
+	log := s.logger.logRequest(r.Host, r.RemoteAddr, r.Method, r.Header)
 
 	w.Header().Set("Content-Type", s.contentType)
 	if s.serverHeader != "" {
@@ -140,18 +121,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Write(s.response)
 
-	s.findExploit("request", r.Method, uuid)
+	s.findExploit("request", r.Method, log)
 	for header, values := range r.Header {
 		for _, value := range values {
-			s.findExploit(fmt.Sprintf("header-%s", header), value, uuid)
+			s.findExploit(fmt.Sprintf("header-%s", header), value, log)
 		}
 	}
+
+	s.logger.log(*log)
 }
 
-func (s *Server) findExploit(location, content, uuid string) {
+func (s *Server) findExploit(location, content string, log *LogEntry) {
 	if m := reExploit.FindString(content); m != "" {
 		deobfuscatedExploit := deobfuscate(m)
-		s.logger.logExploit(location, m, deobfuscatedExploit, uuid)
+		s.logger.logExploit(location, m, deobfuscatedExploit, log)
 	}
 }
 
@@ -164,15 +147,13 @@ func main() {
 	var (
 		port         = flag.String("port", "8080", "Listening port")
 		logFile      = flag.String("log", "log4pot.log", "Log file")
-		responseFile = flag.String("response", "responses/default.json", "File used as response")
-		contentType  = flag.String("content-type", "application/json", "Content type of response")
+		responseFile = flag.String("response", "responses/tomcat-default.html", "File used as response")
+		contentType  = flag.String("content-type", "text/html;charset=utf-8", "Content type of response")
 		serverHeader = flag.String("server-header", "", "Replace the default server header")
 	)
 	flag.Parse()
 
 	logger := &Logger{logFile: *logFile}
-	logger.logStart()
-	defer logger.logEnd()
 
 	response, err := ioutil.ReadFile(*responseFile)
 	if err != nil {
