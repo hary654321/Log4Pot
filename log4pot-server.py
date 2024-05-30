@@ -148,8 +148,8 @@ class Log4PotServerThread(Thread):
         content_type : str,
         deobfuscator : Callable[[str], str],
         port: int,
-        tls : bool,
-        certificate : Optional[str] = None,
+        # tls : bool,
+        # certificate : Optional[str] = None,
         *args, **kwargs):
         self.port = port
         self.server = Log4PotHTTPServer(
@@ -162,13 +162,13 @@ class Log4PotServerThread(Thread):
             ("", port),
             Log4PotHTTPRequestHandler,
         )
-        if tls:
-            self.server.socket = ssl.wrap_socket(
-                self.server.socket,
-                server_side=True,
-                certfile=certificate,
-                ssl_version=ssl.PROTOCOL_TLSv1_2
-                )
+        # if tls:
+        #     self.server.socket = ssl.wrap_socket(
+        #         self.server.socket,
+        #         server_side=True,
+        #         certfile=certificate,
+        #         ssl_version=ssl.PROTOCOL_TLSv1_2
+        #         )
         super().__init__(name=f"httpserver-{port}", *args, **kwargs)
 
     def run(self):
