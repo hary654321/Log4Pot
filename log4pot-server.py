@@ -53,8 +53,9 @@ class Logger:
         self.log("start", "Log4Pot started")
 
     def log_request(self, server_port, client, port, request, headers, uuid):
+        ip_address = re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', headers.get('Host')).group()
         self.log("request", "A request was received", correlation_id=str(uuid), dest_port=server_port, src_ip=client,
-                 src_port=port, request=request, extend=dict(headers),dest_ip=headers.get('Host'))
+                 src_port=port, request=request, extend=dict(headers),dest_ip=ip_address)
 
     def log_exploit(self, location, payload, deobfuscated_payload, uuid):
         self.log(
