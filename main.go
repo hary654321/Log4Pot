@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
@@ -67,35 +66,6 @@ func (l *Logger) log(entry LogEntry) {
 	}
 }
 
-func (l *Logger) logRequest(LocalAddr string, ipAddress string, request string, headers http.Header) *LogEntry {
-	clientIP, clientPort, _ := net.SplitHostPort(ipAddress)
-	portInt, _ := strconv.Atoi(clientPort)
-
-	DestIP, DestPort, _ := net.SplitHostPort(LocalAddr)
-	DestPortInt, _ := strconv.Atoi(DestPort)
-
-	extend := make(map[string]any)
-	extend["header"] = headers
-	return &LogEntry{
-		Type:     "request",
-		DestIP:   DestIP,
-		DestPort: DestPortInt,
-		SrcIP:    clientIP,
-		SrcPort:  portInt,
-		Request:  request,
-		Extend:   extend,
-		UUID:     "<UUID>",
-	}
-}
-
-func (l *Logger) logExploit(location, payload, deobfuscatedPayload string, log *LogEntry) {
-
-	log.Type = "exploit"
-	log.Extend["paylod"] = payload
-	log.Extend["deobfuscatedPayload"] = deobfuscatedPayload
-
-}
-
 type Server struct {
 	logger       *Logger
 	serverHeader string
@@ -114,34 +84,56 @@ func newServer(logger *Logger, serverHeader string, response []byte, contentType
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
-	log := s.logger.logRequest(r.Host, r.RemoteAddr, r.Method, r.Header)
-
 	w.Header().Set("Content-Type", s.contentType)
 	if s.serverHeader != "" {
 		w.Header().Set("Server", s.serverHeader)
 	}
 	w.Write(s.response)
 
-	s.findExploit("request", r.Method, log)
-	for header, values := range r.Header {
+	clientIP, clientPort, _ := net.SplitHostPort(r.RemoteAddr)
+	portInt, _ := strconv.Atoi(clientPort)
+
+	DestIP, DestPort, _ := net.SplitHostPort(r.Host)
+	DestPortInt, _ := strconv.Atoi(DestPort)
+
+	extend := make(map[string]any)
+
+	extend["header"] = r.Header
+	extend["query"] = r.URL.Query()
+	extend["body"] = r.Body
+	log := LogEntry{
+		Type:     "request",
+		DestIP:   DestIP,
+		DestPort: DestPortInt,
+		SrcIP:    clientIP,
+		SrcPort:  portInt,
+		Extend:   extend,
+		UUID:     "<UUID>",
+	}
+
+	if s.findExploit(r) {
+		log.Type = "exploit"
+	}
+
+	s.logger.log(log)
+}
+
+func (s *Server) findExploit(r *http.Request) bool {
+
+	if m := reExploit.FindString(r.URL.RawQuery); m != "" {
+		return true
+	}
+
+	for _, values := range r.Header {
 		for _, value := range values {
-			s.findExploit(fmt.Sprintf("header-%s", header), value, log)
+			if m := reExploit.FindString(value); m != "" {
+				return true
+			}
+
 		}
 	}
 
-	s.logger.log(*log)
-}
-
-func (s *Server) findExploit(location, content string, log *LogEntry) {
-	if m := reExploit.FindString(content); m != "" {
-		deobfuscatedExploit := deobfuscate(m)
-		s.logger.logExploit(location, m, deobfuscatedExploit, log)
-	}
-}
-
-func deobfuscate(payload string) string {
-	// This is a placeholder for the actual deobfuscation logic.
-	return payload
+	return false
 }
 
 func main() {
